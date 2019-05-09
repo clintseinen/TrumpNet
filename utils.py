@@ -1,4 +1,5 @@
 
+import os
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
@@ -98,38 +99,46 @@ def tokenize_and_onehot_encode(tweet, char2int, bot='<BOT>', eot='<EOT>'):
     oh_tkn_tweet[np.arange(len(tkn_tweet)),tkn_tweet] = 1.
     return oh_tkn_tweet
 
-def create_store_tensors(tweet_file, after_date=datetime(2015,1,1,0), pad_value=np.nan):
+def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
+                            pad_value=np.nan, data_dir='data'):
     """
-        Create a tokenized, one hot vector, pytoch dataset from the given tweet file.
+        Create and store tokenized, one hot vector, pytorch tensors in a data directory.
+
+        To use this to create a dataset, run:
+            from utils import *
+            from datetime import datetime
+            tweet_f = 'tweet_datasets/TrumpTwitterArchive/20090504_20190422.csv'
+            bot,eot = '<BOT>','<EOT>'
+            after_date = datetime(2015,1,1,0)
+            tweets = load_tweets(tweet_f,after_date=after_date)
+            vocab = get_vocab(tweets,bot,eot)
+            int2char,char2int = make_dicts(vocab)
+            IDs = create_store_tensors(tweets,char2int,bot,eot)
+            dataset = PrcDataSet(IDs)
 
         Parameters
         ----------
-            tweet_file : str
-                csv file containing the desired tweets
-            after_date : datetime.datetime object **optional**
-                defines cut off date for tweets considered
-            pad_value  : float
+            tweets : list of str
+                list of raw tweets
+            char2int : dict
+                dictionary mapping between characters and integers
+            bot : str **optional**
+                beginning of tweet token. Defaults to '<BOT>'
+            eot : str **optional**
+                end of tweet token. Defaults to '<EOT>'.
+            pad_value : float **optional**
                 the value that will be used to pad entries in tweets
-                to make the lengths equal
+                to make the lengths equal. Defaults to ``numpy.nan``
+            data_dir : str **optional**
+                to directory where the .pt files will be stored
 
         Returns
         -------
-            ``torch.utils.data.Dataset``
-                tokenized, one hot vectorized dataset
-            int2char : dict
-                mapping from integers to character
-            char2int : dict
-                mapping from character to integer
+            IDs : list of tuples containing integers
+                IDs for all saved tensors and the true length of each tweet    
     """
-    # set beginning of tweet and end of tweet tokens
-    bot,eot = '<BOT>','<EOT>'
 
-    # load tweets in text form and get vocab
-    tweets = load_tweets(tweet_file,after_date=after_date)
-    vocab  = get_vocab(tweets)
-
-    # get mapping dictionaries
-    int2char,char2int = make_dicts(vocab)
+    # get number of characters
     num_chars = len(char2int)
 
     # tokenize and onehot encode tweets and store in list
@@ -143,35 +152,46 @@ def create_store_tensors(tweet_file, after_date=datetime(2015,1,1,0), pad_value=
     tkn_tweets_lst = sorted(tkn_tweets_lst, key=len, reverse=True)
     max_len = len(tkn_tweets_lst[0])
 
-    # create large, 3D numpy array of tokenized,one hot tweets
-    #   with dims (N_tweets x max_len x numchars)
-    tkn_tweets_np = np.zeros(shape=(len(tkn_tweets_lst),max_len,num_chars), dtype=np.float32)
+    # torch tensor from each tokenized tweet and save in the datadir
+    if not os.path.isdir(data_dir): os.mkdir(data_dir)
+    IDs = []
     for i,tweet in enumerate(tkn_tweets_lst):
-        if i == 0:
-            tkn_tweets_np[i,:,:] = tweet
-        else:
+        if not i == 0:
             # pad tweet before adding to array
-            pad_len = max_len - len(tweet)
+            tweet_len = len(tweet)
+            pad_len = max_len - tweet_len
             pad_arr = np.full(shape=(pad_len,num_chars),fill_value=pad_value)
             pad_tweet = np.append(tweet,pad_arr,axis=0)
+        else: 
+            # padding isn't required
+            tweet_len = max_len
+            pad_tweet = tweet
+        
+        # save tensor
+        tnsr_f = os.path.join(data_dir,'{}.pt'.format(i))
+        torch.save(torch.from_numpy(tweet),tnsr_f)
+        IDs.append((i,tweet_len))
 
-            # store padded tweet
-            tkn_tweets_np[i,:,:] = pad_tweet
-
-    # finally create dataset!
-    return PrcDataSet(torch.from_numpy(tkn_tweets_np)),int2char,char2int
+    print("Processed tweets save in tokenized, one-hot torch tensors in {}".format(data_dir))
+    return IDs
 
 class PrcDataSet(Dataset):
     """ Processed tweet dataset
     """
 
-    def __init__(self, data):
+    def __init__(self, IDs, data_dir='data'):
         """ initiate data set with large torch tensor
+
+            Parameters
+            ----------
+                IDs : list of ints
+                    defines the IDs of the torch tensor files 
         """
-        self.data = data
+        self.IDs        = IDs
+        self.data_dir   = data_dir
     
     def __len__(self):
-        return len(self.data)
+        return len(self.IDs)
 
     def __getitem__(self,idx):
         """
@@ -192,7 +212,12 @@ class PrcDataSet(Dataset):
             lngth : torch.int8
                 length of the sequence X
         """
-        X       = self.data[idx,:-1,:]
-        lbls    = self.data[idx,1:,:]
-        lngth   = len(X)
+        ID      = self.IDs[idx][0]
+        lngth   = self.IDs[idx][1]
+
+        # load tensor
+        tensor_f= os.path.join(self.data_dir,'{}.pt'.format(idx))
+        tensor  = torch.load(tensor_f)
+        X       = tensor[:-1,:]
+        lbls    = tensor[1:,:]
         return X,lbls,lngth
