@@ -10,8 +10,6 @@ import collections
 
 # .. to-do::
 #
-#   - add <beg> and <end> tokens
-#   - potentially add <pad> token
 #   - test the dataset object!
 #       - create method for generating large 'torchified', padded, tokenized, one-hotted torch tensor
 #           that gets sent into PrcDataSet

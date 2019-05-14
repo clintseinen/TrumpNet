@@ -1,10 +1,11 @@
 import torch
-import numpy as np
 from torch import nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
 
 class batch_lstm(nn.Module):
-    def __init__(self, nchars, hsize, nlayers, dropout=0)
+    def __init__(self, nchars, hsize, nlayers, dropout=0):
         """Initialize network
         """
         super(batch_lstm, self).__init__()
