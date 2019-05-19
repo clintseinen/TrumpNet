@@ -31,10 +31,31 @@ def train(net, dataset, epochs, batch_size, lr, optm='Adam'):
     # launch trainer
     for i in range(epochs):
         for inps, lbls, lens in data_ldr:
+            # sort batch
+            srt_inps, srt_lbls, srt_lens = utils.sort_batch(inps,lbls,lens)
+
+            # get outputs
             opt.zero_grad()
-            outputs     = nets.forward(inps,lens)
-            batch_loss  = loss(outputs,lbls)
+            outputs = net.forward(srt_inps,srt_lens)
+
+            # calc loss
+            # TO DO: Calculate the loss over the sequences.. at the moment, it looks 
+            #   like the loss is only capable of handling a loss calc from one 
+            #   "timestep"
+            #
+            # Error:
+            #   ValueError: Expected target size (20, 141), got torch.Size([20, 316, 141])
+            #
+            #   where is expect 316 is the max length seen in this batch
+            for i in range(batch_size):
+                l = int(srt_lens[i])    # can use l to decide when to stop going over the sequence
+                print(outputs[i,:l,:])
+
+            raise Exception
+            batch_loss = loss(outputs,srt_lbls)
             print(batch_loss)
+
+            # calc gradients and step
             batch_loss.backward()
             opt.step()
 
@@ -61,7 +82,7 @@ if __name__ == '__main__':
     output_dir  = args.strg_dir
     tweet_file  = args.tweet_file
     bot,eot     = '<BOT>','<EOT>'       # beginning/end of tweet tokens
-    after_date  = datetime(2015,1,1,0)  # date cutt off for considering tweets
+    after_date  = datetime(2018,1,1,0)  # date cutt off for considering tweets
 
     print("Training a network with the given parameters")
     print("\thidden dimension size : {}".format(nhidden))
@@ -77,12 +98,14 @@ if __name__ == '__main__':
     #====================
     print("Loading raw tweets...")
     tweets = utils.load_tweets(tweet_file,after_date=after_date)
+    print("Found {} tweets".format(len(tweets)))
 
     # get tweet vocabulary and create mappings between integers/characters
     print("Analyzing corpus...")
     vocab  = utils.get_vocab(tweets,bot,eot)
     nchars = len(vocab) 
     int2char,char2int = utils.make_dicts(vocab)
+    print("Found {} tokens".format(nchars))
 
     # create dataset of saved, torch tensors
     print("Generating torchified dataset...")
@@ -92,5 +115,6 @@ if __name__ == '__main__':
     #=========================
     # Define network and train
     #=========================
+    print("Training...")
     net = nets.batch_lstm(nchars=nchars, hsize=nhidden, nlayers=nlayers)
     train(net, dataset, epochs, batch_size, lr=0.0001, optm='Adam')

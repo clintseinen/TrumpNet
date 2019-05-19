@@ -148,7 +148,7 @@ def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
 
     # sort list so that max length tweet comes first
     tkn_tweets_lst = sorted(tkn_tweets_lst, key=len, reverse=True)
-    max_len = len(tkn_tweets_lst[0])
+    max_len = tkn_tweets_lst[0].shape[0]
 
     # torch tensor from each tokenized tweet and save in the datadir
     if not os.path.isdir(data_dir): os.mkdir(data_dir)
@@ -156,7 +156,7 @@ def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
     for i,tweet in enumerate(tkn_tweets_lst):
         if not i == 0:
             # pad tweet before adding to array
-            tweet_len = len(tweet)
+            tweet_len = tweet.shape[0]
             pad_len = max_len - tweet_len
             pad_arr = np.full(shape=(pad_len,num_chars),fill_value=pad_value)
             pad_tweet = np.append(tweet,pad_arr,axis=0)
@@ -166,12 +166,35 @@ def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
             pad_tweet = tweet
         
         # save tensor
-        tnsr_f = os.path.join(data_dir,'{}.pt'.format(i))
-        torch.save(torch.from_numpy(tweet),tnsr_f)
+        tnsr_f      = os.path.join(data_dir,'{}.pt'.format(i))
+        tmp_tnsr    = torch.from_numpy(pad_tweet).type(torch.FloatTensor) # convert to float tensor
+        torch.save(tmp_tnsr,tnsr_f)
         IDs.append((i,tweet_len))
 
     print("Processed tweets save in tokenized, one-hot torch tensors in {}".format(data_dir))
     return IDs
+
+def sort_batch(X_batch,lbl_batch,lns_batch):
+    """
+        Take in a batch of inputs, lbls, and sequence lengths, and sort them so that they 
+        are a batch sorted by sequence length, in decreasing order. This is required to work 
+        with the batching internal to the lstm network object.
+    """
+    dtype = X_batch.type()
+    # To do:
+    #   - trim X_batch and lbl_batch so they are padded to the max length seen in this batch. Not
+    #     the entire dataset.
+    srtd_batch = sorted(zip(X_batch,lbl_batch,lns_batch), key=lambda x:x[2], reverse=True)
+
+    # populate the sorted tensors by looping over the tuple (there is probably a better way)
+    srtd_X_batch    = torch.empty(X_batch.shape).type(dtype)
+    srtd_lbl_batch  = torch.empty(lbl_batch.shape).type(dtype)
+    srtd_lens       = torch.empty(lns_batch.shape).type('torch.IntTensor')
+    for i,sample in enumerate(srtd_batch):
+        srtd_X_batch[i,:,:]     = sample[0]
+        srtd_lbl_batch[i,:,]    = sample[1]
+        srtd_lens[i]            = sample[2]
+    return srtd_X_batch,srtd_lbl_batch,srtd_lens
 
 class PrcDataSet(Dataset):
     """ Processed tweet dataset
