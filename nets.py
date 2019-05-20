@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
 class batch_lstm(nn.Module):
-    def __init__(self, nchars, hsize, nlayers, dropout=0):
+    def __init__(self, nchars, hsize, nlayers):
         """Initialize network
         """
         super(batch_lstm, self).__init__()
@@ -14,11 +14,9 @@ class batch_lstm(nn.Module):
         self.nchars     = nchars
         self.hsize      = hsize
         self.nlayers    = nlayers
-        self.dropout    = dropout
 
         # define lstm layer
-        self.lstm = nn.LSTM(nchars, hsize, nlayers,
-                                dropout=dropout, batch_first=True)
+        self.lstm = nn.LSTM(nchars, hsize, nlayers,batch_first=True)
 
         # define final fully connected linear layer
         self.fc = nn.Linear(hsize,nchars)

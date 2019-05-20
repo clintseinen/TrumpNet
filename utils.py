@@ -213,18 +213,37 @@ class PrcDataSet(Dataset):
             X : torch tensor with dtype = torch.int8
                 padded/tokenized tweet sequence in one-hot vector format. 
                 Dim: ( lngth x num_chars )
-            lbls : torch tensor with dtype = torch.int8
-                padded/tokenized tweet sequence in one-hot vector format
+            lbls : torch tensor with dtype = torch.long
+                non-padded sequence of token classes
                 Dim: ( lngth x num_chars )
-            lngth : torch.int8
-                length of the sequence X
+            seq_lngth : torch.int8
+                length of the sequence X. Note that this will always be 1 less 
+                than the full tweet length. This is done as the lbls don't include
+                the first token, and X doesn't include the last.
         """
-        ID      = self.IDs[idx][0]
-        lngth   = self.IDs[idx][1]
+        ID          = self.IDs[idx][0]
+        tweet_lngth = self.IDs[idx][1]
 
         # load tensor
-        tensor_f= os.path.join(self.data_dir,'{}.pt'.format(idx))
-        tensor  = torch.load(tensor_f)
-        X       = tensor[:-1,:]
-        lbls    = tensor[1:,:]
-        return X,lbls,lngth
+        tensor_f  = os.path.join(self.data_dir,'{}.pt'.format(idx))
+        tensor    = torch.load(tensor_f)
+
+        # one hot tensor inputs
+        X = tensor[:-1,:]
+
+        # true input length (doesn't include last token or padding)
+        seq_lngth = tweet_lngth - 1 
+        pad_lngth = X.shape[0]
+
+        # token class indices
+        one_hot_lbls = tensor[1:,:]
+        lbls = torch.empty(pad_lngth)
+        for i,l in enumerate(one_hot_lbls):  
+            val,class_ind = torch.max(l,0)
+            if val == 1:
+                lbls[i] = class_ind.long()
+            else:
+                assert torch.isnan(val), "value other than 1 or nan found!"
+                lbls[i] = val
+
+        return X,lbls,seq_lngth

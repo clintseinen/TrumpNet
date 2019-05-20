@@ -3,6 +3,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils import clip_grad_norm_
 import numpy as np
 import argparse
 import os
@@ -14,6 +15,16 @@ import utils
 
 def train(net, dataset, epochs, batch_size, lr, optm='Adam'):
     """ Take in a given network and train it with the given parameters.
+
+        .. to-do ::
+
+            - rewrite how the loss is calculated, using the ignore_index argument
+              from NLLLoss. This would require making a specific padding token.
+              This would allow us to only do one loop, over the max sequence
+              length, and the loss calc would be intelligent to ignore
+              contributions to the loss from padding tokens. If I get this on
+              Westgrid's GPUS.. I DEFINITELY need to do this to get max
+              performance.
     """
     # set into training mode
     net.train()
@@ -40,25 +51,23 @@ def train(net, dataset, epochs, batch_size, lr, optm='Adam'):
             opt.zero_grad()
             outputs = net.forward(srt_inps,srt_lens)
 
-            # calc loss
-            # TO DO: Calculate the loss over the sequences.. at the moment, it looks 
-            #   like the loss is only capable of handling a loss calc from one 
-            #   "timestep"
-            #
-            # Error:
-            #   ValueError: Expected target size (20, 141), got torch.Size([20, 316, 141])
-            #
-            #   where is expect 316 is the max length seen in this batch
-            for i in range(batch_size):
-                l = int(srt_lens[i])    # can use l to decide when to stop going over the sequence
-                print(outputs[i,:l,:])
+            # calc loss -> sub-optimal, see trainer doc string
+            batch_loss = 0
+            for j in range(batch_size):
 
-            raise Exception
-            batch_loss = loss(outputs,srt_lbls)
+                # get length of sequence and loop over each sample
+                seq_ln      = srt_lens[j]
+                seq_loss    = 0
+                for k in range(seq_ln):
+                    opt_k = outputs[j,k,:].unsqueeze(0)
+                    lbl_k = srt_lbls[j,k].unsqueeze(0).long()
+                    seq_loss += loss(opt_k,lbl_k)/seq_ln
+                batch_loss += seq_loss/batch_size
             print(batch_loss)
 
-            # calc gradients and step
+            # calc gradients, clip, and step
             batch_loss.backward()
+            nrm = clip_grad_norm_(net.parameters(),0.1)
             opt.step()
 
 if __name__ == '__main__':
@@ -153,17 +162,20 @@ if __name__ == '__main__':
         with open(ID_f,'r') as f:
             tmp_dat = f.readlines()
 
-        # parse meta data
+        # parse meta data -> I don't like this method of loading
         tweet_file      = tmp_dat[0].split('=')[-1].strip()
         after_date_str  = tmp_dat[1].split('=')[-1].strip()
         after_date      = datetime.strptime(after_date_str,"%Y-%m-%d")
         bot             = tmp_dat[2].split('=')[-1].strip()
         eot             = tmp_dat[3].split('=')[-1].strip()
-        nchars          = tmp_dat[4].split('=')[-1].strip()
+        nchars          = int(tmp_dat[4].split('=')[-1].strip())
 
         # IDs and sequence lengths
         tmp_dat = tmp_dat[5:]
-        IDs = [ (int(tmp.split()[0]),int(tmp.split()[1])) for tmp in tmp_dat ]
+        IDs     = [ (int(tmp.split()[0]),int(tmp.split()[1])) for tmp in tmp_dat ]
+
+        # set dataset
+        dataset = utils.PrcDataSet(IDs)
 
     #=========================
     # Define network and train
