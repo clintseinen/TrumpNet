@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -6,6 +7,7 @@ import numpy as np
 import argparse
 import os
 from datetime import datetime
+import json
 
 import nets
 import utils
@@ -72,6 +74,10 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--tweet_file', metavar='TWEET_FILE', action='store',
                             default='tweet_datasets/TrumpTwitterArchive/20090504_20190422.csv',
                             help='csv file containing the desired training data')
+    parser.add_argument('-l', '--load_dataset', action='store_true',
+                            help=('make the trainer load the dataset in the current data directory'+
+                                  ' instead of generating it.'),
+                            default=False)
 
     # parse arguments and set additional args
     args        = parser.parse_args()
@@ -83,6 +89,9 @@ if __name__ == '__main__':
     tweet_file  = args.tweet_file
     bot,eot     = '<BOT>','<EOT>'       # beginning/end of tweet tokens
     after_date  = datetime(2018,1,1,0)  # date cutt off for considering tweets
+    ID_f        = os.path.join('data','data_info.txt')
+    char2int_f  = os.path.join('data','char2int.json')
+    int2char_f  = os.path.join('data','int2char.json')
 
     print("Training a network with the given parameters")
     print("\thidden dimension size : {}".format(nhidden))
@@ -96,21 +105,65 @@ if __name__ == '__main__':
     #====================
     # Pre-Process Dataset
     #====================
-    print("Loading raw tweets...")
-    tweets = utils.load_tweets(tweet_file,after_date=after_date)
-    print("Found {} tweets".format(len(tweets)))
-
-    # get tweet vocabulary and create mappings between integers/characters
-    print("Analyzing corpus...")
-    vocab  = utils.get_vocab(tweets,bot,eot)
-    nchars = len(vocab) 
-    int2char,char2int = utils.make_dicts(vocab)
-    print("Found {} tokens".format(nchars))
 
     # create dataset of saved, torch tensors
-    print("Generating torchified dataset...")
-    IDs = utils.create_store_tensors(tweets,char2int,bot,eot)
-    dataset = utils.PrcDataSet(IDs)
+    if not args.load_dataset:
+        print("Loading raw tweets...")
+        tweets = utils.load_tweets(tweet_file,after_date=after_date)
+        print("Found {} tweets".format(len(tweets)))
+
+        # get tweet vocabulary and create mappings between integers/characters
+        print("Analyzing corpus...")
+        vocab  = utils.get_vocab(tweets,bot,eot)
+        nchars = len(vocab) 
+        int2char,char2int = utils.make_dicts(vocab)
+        print("Found {} tokens".format(nchars))
+        print("Generating torchified dataset...")
+        IDs = utils.create_store_tensors(tweets,char2int,bot,eot)
+        dataset = utils.PrcDataSet(IDs)
+
+        # save ID file and dataset information, for later use
+        with open(ID_f, 'w') as f:
+            # write meta data that will be used to ID the dataset
+            after_date_str = after_date.strftime("%Y-%m-%d")
+            f.write('tweet_file = {}\n'.format(tweet_file))
+            f.write('after_date = {}\n'.format(after_date_str))
+            f.write('bot = {}\n'.format(bot))
+            f.write('eot = {}\n'.format(eot))
+            f.write('nchars = {}\n'.format(nchars))
+
+            # write IDs and lengths
+            f.write("\n".join("{} {}".format(tmp[0],tmp[1]) for tmp in IDs))
+
+        with open(int2char_f,'w') as f:
+            json.dump(int2char,f,indent=2,sort_keys=True)
+        with open(char2int_f,'w') as f:
+            json.dump(char2int,f,indent=2,sort_keys=True)
+    else:
+        print("Loading pre-generated processed data...")
+
+        # char to integer and back mappings
+        with open(int2char_f,'r') as f:
+            int2char = json.load(f)
+        with open(char2int_f,'r') as f:
+            char2int = json.load(f)
+        
+        # load main file
+        #   - I could definitely store this in a better way...
+        with open(ID_f,'r') as f:
+            tmp_dat = f.readlines()
+
+        # parse meta data
+        tweet_file      = tmp_dat[0].split('=')[-1].strip()
+        after_date_str  = tmp_dat[1].split('=')[-1].strip()
+        after_date      = datetime.strptime(after_date_str,"%Y-%m-%d")
+        bot             = tmp_dat[2].split('=')[-1].strip()
+        eot             = tmp_dat[3].split('=')[-1].strip()
+        nchars          = tmp_dat[4].split('=')[-1].strip()
+
+        # IDs and sequence lengths
+        tmp_dat = tmp_dat[5:]
+        IDs = [ (int(tmp.split()[0]),int(tmp.split()[1])) for tmp in tmp_dat ]
 
     #=========================
     # Define network and train

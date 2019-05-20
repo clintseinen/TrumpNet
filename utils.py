@@ -7,12 +7,7 @@ import csv
 from datetime import datetime
 import codecs
 import collections
-
-# .. to-do::
-#
-#   - test the dataset object!
-#       - create method for generating large 'torchified', padded, tokenized, one-hotted torch tensor
-#           that gets sent into PrcDataSet
+import shutil
 
 def load_tweets(f, after_date=None, silent=True, encoding='utf-8'):
     """
@@ -102,18 +97,6 @@ def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
     """
         Create and store tokenized, one hot vector, pytorch tensors in a data directory.
 
-        To use this to create a dataset, run:
-            from utils import *
-            from datetime import datetime
-            tweet_f = 'tweet_datasets/TrumpTwitterArchive/20090504_20190422.csv'
-            bot,eot = '<BOT>','<EOT>'
-            after_date = datetime(2015,1,1,0)
-            tweets = load_tweets(tweet_f,after_date=after_date)
-            vocab = get_vocab(tweets,bot,eot)
-            int2char,char2int = make_dicts(vocab)
-            IDs = create_store_tensors(tweets,char2int,bot,eot)
-            dataset = PrcDataSet(IDs)
-
         Parameters
         ----------
             tweets : list of str
@@ -135,6 +118,10 @@ def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
             IDs : list of tuples containing integers
                 IDs for all saved tensors and the true length of each tweet    
     """
+    # check if the data dir exists and delete if it does
+    #   so we have clean data
+    if os.path.isdir(data_dir): shutil.rmtree(data_dir)
+    os.mkdir(data_dir)
 
     # get number of characters
     num_chars = len(char2int)
@@ -151,7 +138,6 @@ def create_store_tensors(tweets, char2int, bot='<BOT>', eot='<EOT>',
     max_len = tkn_tweets_lst[0].shape[0]
 
     # torch tensor from each tokenized tweet and save in the datadir
-    if not os.path.isdir(data_dir): os.mkdir(data_dir)
     IDs = []
     for i,tweet in enumerate(tkn_tweets_lst):
         if not i == 0:
